@@ -14,6 +14,7 @@ public class IecClient {
     private String host;
     private Socket socket;
     private int port;
+
     IecClient(String host, int port) {
         this.host = host;
         this.port = port;
@@ -36,12 +37,12 @@ public class IecClient {
     }
 
     public void connect() {
-        SocketAddress addr = new InetSocketAddress( host, port );
+        SocketAddress addr = new InetSocketAddress(host, port);
         try {
             socket = new Socket();
-            socket.connect( addr);
+            socket.connect(addr);
         } catch (IOException e) {
-            e.printStackTrace();
+            System.out.println("客户端连接失败：" + e.getMessage());
         }
     }
 
@@ -52,11 +53,11 @@ public class IecClient {
     public void send(byte[] sendData, int sendLen) {
         try {
             DataOutputStream outputStream = new DataOutputStream(socket.getOutputStream());
-            outputStream.write(sendData,0, sendLen);
+            outputStream.write(sendData, 0, sendLen);
             outputStream.flush();
             StringBuilder buidler = new StringBuilder("发送数据：");
             output(buidler, sendData, sendLen);
-        } catch(IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -66,20 +67,21 @@ public class IecClient {
         try {
             DataInputStream inputStream = new DataInputStream(socket.getInputStream());
             recvLen = inputStream.read(recvData);
-            if(recvLen > 0) {
+            if (recvLen > 0) {
                 StringBuilder buidler = new StringBuilder("接收数据：");
                 output(buidler, recvData, recvLen);
             }
-        } catch(IOException e) {
+        } catch (IOException e) {
             e.printStackTrace();
             return 0;
         }
         return recvLen;
     }
+
     public void output(StringBuilder builder, byte[] data, int len) {
-        for(int i=0; i<len; ++i) {
-            builder.append(Integer.toHexString(data[i]&0xff)).append(" ");
+        for (int i = 0; i < len; ++i) {
+            builder.append(Integer.toHexString(data[i] & 0xff)).append(" ");
         }
-        System.out.println(builder);
     }
 }
+   
