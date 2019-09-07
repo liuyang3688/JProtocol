@@ -9,6 +9,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.util.Arrays;
+import java.util.concurrent.ExecutionException;
 
 public class IecClient {
     private String host;
@@ -40,13 +41,21 @@ public class IecClient {
         try {
             socket = new Socket();
             socket.connect( addr);
+            System.out.println("客户端成功连接服务端 " + host+":"+port);
         } catch (IOException e) {
-            e.printStackTrace();
+            //System.out.println("客户端连接错误："+e.getMessage());
         }
     }
 
     public boolean isConnected() {
-        return socket.isConnected();
+        boolean isConnect = true;
+        try {
+            socket.sendUrgentData(0xff);
+        } catch (Exception e) {
+            System.out.println("----------检测到网络状况异常，正在尝试重连...");
+            isConnect = false;
+        }
+        return isConnect;
     }
 
     public void send(byte[] sendData, int sendLen) {
@@ -71,7 +80,11 @@ public class IecClient {
                 output(buidler, recvData, recvLen);
             }
         } catch(IOException e) {
-            e.printStackTrace();
+            try {
+                socket.close();
+            }catch (Exception ee) {
+                System.out.println("socket关闭异常："+e.getMessage());
+            }
             return 0;
         }
         return recvLen;

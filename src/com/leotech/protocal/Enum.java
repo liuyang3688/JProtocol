@@ -9,4 +9,8 @@ public class Enum {
         FRAME_CTL_1,
         FRAME_ADDR_2,
     };
+    public enum DATA_TYPE {
+        YX,
+        YC
+    }
 }
