@@ -1,12 +1,21 @@
 package com.leotech.protocal;
 
-public class Protocol101 extends Thread {
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Timer;
+import java.util.TimerTask;
 
+public class Protocol101 extends Thread {
+    final static SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd@HH:mm:ss");
+    static int callCount = 0;
     public enum CmdType {
         CMD101_NO,
         CMD101_RESSTS,
         CMD101_RESLINK,
-        CMD101_RESACK,
+        CMD101_RESINITACK,
+        CMD101_RESCALLACK,
+        CMD101_RESCALLOVERACK,
+        CMD101_RESDATAACK,
         CMD101_RESTEST,
         CMD101_REQLINK,
         CMD101_RSTLINK,
@@ -22,6 +31,7 @@ public class Protocol101 extends Thread {
     };
     static int connectCount = 0;
     int address;
+    int callPeriod;
     IecClient client = null;
     byte[] receiveBytes;
     byte[] sendBytes;
@@ -30,13 +40,16 @@ public class Protocol101 extends Thread {
     boolean needSendCommand = true;
     int step = 0;
     boolean running = true;
+    Timer timer = null;
 
-    public Protocol101(int address)
+    public Protocol101(int callPeriod, int address)
     {
         receiveBytes = new byte[10240];
         sendBytes = new byte[10240];
         this.address = address;
         this.needSendCommand = true;
+        this.timer = new Timer();
+        this.callPeriod = callPeriod;
     }
 
     @Override
@@ -50,9 +63,7 @@ public class Protocol101 extends Thread {
             } else {
                 int len = client.recv(receiveBytes);
                 if(len == 0) {
-                    if(!client.isConnected()) {
-                        cycleConnect();
-                    }
+                    cycleConnect();
                 } else {
                     parsePacket(receiveBytes, len);
                 }
@@ -64,10 +75,27 @@ public class Protocol101 extends Thread {
             }
         }
     }
+    public void reqCall() {
+        this.currCommand = CmdType.CMD101_REQCALL;
+        this.needSendCommand = true;
+    }
 
-    public void init()
+    public void startCallTimer() {
+        timer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                reqCall();
+            }
+        }, 1000, callPeriod);
+    }
+
+    public void stopCallTimer() {
+        this.timer.cancel();
+    }
+
+    public void init(String host, int port)
     {
-        client = new IecClient("115.221.10.109", 2404);
+        client = new IecClient(host, port);
         client.connect();
         cycleConnect();
     }
@@ -76,13 +104,14 @@ public class Protocol101 extends Thread {
         while(!client.isConnected()) {
             try{
                 Thread.sleep(5000);
-                System.out.println("客户端尝试第"+(++connectCount)+"次连接 " + client.getHost()+":"+client.getPort());
+                System.out.println("\n客户端尝试第"+(++connectCount)+"次连接 " + client.getHost()+":"+client.getPort());
                 client.connect();
+                needSendCommand = true;
+                currCommand = CmdType.CMD101_REQLINK;
             } catch(Exception e) {
                 e.printStackTrace();
             }
         }
-        System.out.println("客户端成功连接服务端 " + client.getHost()+":"+client.getPort());
     }
 
     public void parsePacket(byte[] receiveBytes, int len)
@@ -153,14 +182,37 @@ public class Protocol101 extends Thread {
                 byte cot = receiveBytes[9];
                 if(ti==0x46 && vsq==0x01 && cot==0x04) { // 初始化完成
                     // 发送2级数据召唤
-                    currCommand = CmdType.CMD101_RESACK;
+                    currCommand = CmdType.CMD101_RESINITACK;
                     needSendCommand = true;
                 } else if(ti==0x64 && vsq==0x01 && cot==0x07) { //收到总召确认
-                    currCommand = CmdType.CMD101_RESACK;
+                    currCommand = CmdType.CMD101_RESCALLACK;
+                    needSendCommand = true;
+                } else if(ti==0x64 && vsq==0x01 && cot==0x0A) { //收到总召结束
+                    currCommand = CmdType.CMD101_RESCALLOVERACK;
                     needSendCommand = true;
                 }
+            } else if(processLen > 18) { // 总召数据帧
+                byte ti = receiveBytes[7];
+                byte vsq = receiveBytes[8];
+                byte cot = receiveBytes[9];
+                switch(ti) {
+                    case 0x01: // 单点信息
+                        YxParser.parseYx(receiveBytes);
+                        currCommand = CmdType.CMD101_RESDATAACK;
+                        needSendCommand = true;
+                        break;
+                    case 0x02: // 带时标的单点
+                        break;
+                    case 0x0D: // 短浮点遥测
+                        YcParser.parseFloatYc(receiveBytes);
+                        currCommand = CmdType.CMD101_RESDATAACK;
+                        needSendCommand = true;
+                        break;
+                    case 0x0E: // 带时标的短浮点遥测
+                        break;
+                }
             } else {
-
+                System.out.println("接收帧格式非法");
             }
         }
     }
@@ -171,22 +223,25 @@ public class Protocol101 extends Thread {
 
         switch (currCommand)
         {
-            case CMD101_RESACK:
+            case CMD101_RESINITACK:
                 sendLen = makeResponseConfirmPacket(sendBytes);
                 //currCommand = CmdType.CMD101_REQLEVEL1DATA;
                 currCommand = CmdType.CMD101_REQCALL;
+                needSendCommand = true;
                 break;
             case CMD101_RESSTS: //
                 sendLen = makeResponseLinkStatusPacket(sendBytes);
                 needSendCommand = false;
                 break;
             case CMD101_RESLINK:
+            case CMD101_RESTEST:
+            case CMD101_RESCALLACK:
+            case CMD101_RESDATAACK:
                 sendLen = makeResponseConfirmPacket(sendBytes);
                 needSendCommand = false;
                 break;
-            case CMD101_RESTEST:
+            case CMD101_RESCALLOVERACK:
                 sendLen = makeResponseConfirmPacket(sendBytes);
-                needSendCommand = false;
                 break;
             case CMD101_REQLINK:
                 sendLen = makeRequestLinkStatusPacket(sendBytes);
@@ -201,6 +256,7 @@ public class Protocol101 extends Thread {
                 needSendCommand = false;
                 break;
             case CMD101_REQCALL:
+                System.out.println(">>>>>>>发起第"+(++callCount)+"次总召 时间："+formatter.format(new Date()));
                 sendLen = makeRequestCallPacket(sendBytes);
                 needSendCommand = false;
                 break;
@@ -237,6 +293,17 @@ public class Protocol101 extends Thread {
         if (sendLen != 0)
         {
             client.send(sendBytes, sendLen);
+        }
+        if(currCommand == CmdType.CMD101_RESCALLOVERACK) {
+            try{
+                System.out.println("<<<<<<<完成第"+callCount+"次总召 时间："+formatter.format(new Date()));
+                Thread.sleep(30000);
+            } catch(Exception e) {
+                e.printStackTrace();
+            } finally {
+                currCommand = CmdType.CMD101_REQCALL;
+                needSendCommand = true;
+            }
         }
     }
 

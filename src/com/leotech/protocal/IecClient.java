@@ -9,6 +9,7 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.util.Arrays;
+import java.util.concurrent.ExecutionException;
 
 public class IecClient {
     private String host;
@@ -40,14 +41,28 @@ public class IecClient {
         SocketAddress addr = new InetSocketAddress(host, port);
         try {
             socket = new Socket();
+<<<<<<< HEAD
             socket.connect(addr);
         } catch (IOException e) {
             System.out.println("客户端连接失败：" + e.getMessage());
+=======
+            socket.connect( addr);
+            System.out.println("客户端成功连接服务端 " + host+":"+port);
+        } catch (IOException e) {
+            //System.out.println("客户端连接错误："+e.getMessage());
+>>>>>>> 2e5c3e8ac3839c8337baa10df3f210d1ac4b424a
         }
     }
 
     public boolean isConnected() {
-        return socket.isConnected();
+        boolean isConnect = true;
+        try {
+            socket.sendUrgentData(0xff);
+        } catch (Exception e) {
+            System.out.println("----------检测到网络状况异常，正在尝试重连...");
+            isConnect = false;
+        }
+        return isConnect;
     }
 
     public void send(byte[] sendData, int sendLen) {
@@ -71,8 +86,17 @@ public class IecClient {
                 StringBuilder buidler = new StringBuilder("接收数据：");
                 output(buidler, recvData, recvLen);
             }
+<<<<<<< HEAD
         } catch (IOException e) {
             e.printStackTrace();
+=======
+        } catch(IOException e) {
+            try {
+                socket.close();
+            }catch (Exception ee) {
+                System.out.println("socket关闭异常："+e.getMessage());
+            }
+>>>>>>> 2e5c3e8ac3839c8337baa10df3f210d1ac4b424a
             return 0;
         }
         return recvLen;
